@@ -18,10 +18,6 @@ int				main(int ac, char **av)
 	int *d_newTab = NULL;
 	int *h_newTab;
 
-	h_newTab = static_cast<int *>(malloc(sizeof(int) * size));
-	d_newTab = static_cast<int *>(malloc(sizeof(int) * size));
-	d_tab = static_cast<int *>(malloc(sizeof(int) * size));
-
 	if (ac != 2)
 	{
 		std::cout << "Usage : ./test [size]" << std::endl;
@@ -30,6 +26,10 @@ int				main(int ac, char **av)
 
 	size = std::atoi(av[1]);
 	tab = static_cast<int *>(malloc(sizeof(int) * size));
+	h_newTab = static_cast<int *>(malloc(sizeof(int) * size));
+	d_newTab = static_cast<int *>(malloc(sizeof(int) * size));
+	d_tab = static_cast<int *>(malloc(sizeof(int) * size));
+
 	for (int i = 0; i < size; i++)
 		tab[i] = i;
 
@@ -37,14 +37,14 @@ int				main(int ac, char **av)
   	cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
 
 	checkCudaErrors(cudaMemcpy(h_newTab, d_newTab, sizeof(int) * size, cudaMemcpyDeviceToHost));
-
 	cudaFree(d_tab);
 	cudaFree(d_newTab);
 
-
-
 	for (int i = 0; i < size; i++)
 		std::cout << tab[i] << "->" << h_newTab[i] << std::endl;
+
+	free(tab);
+	free(h_newTab);
 
 	return (0);
 }

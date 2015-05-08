@@ -7,7 +7,8 @@ NVCC_OPTS=-O3 -arch=sm_20 -Xcompiler -Wall -Xcompiler -Wextra -m64
 
 GCC_OPTS=-O3 -Wall -Wextra -m64
 
-student: main.o incrementOne.o Makefile
+
+all: main.o incrementOne.o Makefile
 	$(NVCC) -o test main.o incrementOne.o $(NVCC_OPTS)
 
 main.o: main.cpp
@@ -21,3 +22,5 @@ clean:
 
 fclean: clean
 	rm -f test
+
+re: fclean all
