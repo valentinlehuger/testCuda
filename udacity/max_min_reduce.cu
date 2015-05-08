@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <cuda.h>
 
-#define NB 1000
+#define NB 101
 #define BLOCK_SIZE 512
 #define GRID_SIZE NB / BLOCK_SIZE + 1
 
@@ -23,16 +23,12 @@ __global__ void max(float *d_in, float *d_out)
 	int ft_id = threadIdx.x + blockDim.x * blockIdx.x;
 	int tid = threadIdx.x;
 	int size = (blockIdx.x == gridDim.x - 1) ? (NB % blockDim.x) : blockDim.x;
-	printf("%d\n", size);
-	// for (int i = 0; i < blockDim.x; i ++)
-	// {
-	// 	printf("%f\n", d_in[i]);
-	// }
 
 	for (size_t s = blockDim.x / 2; s > 0; s >>= 1)
 	{
 		if (ft_id + s < NB && tid < s)
 		{
+			printf("Compare d_in[%d] = %f with d_in[%d] = %f\n", (int)ft_id, d_in[ft_id], (int)(ft_id + s), d_in[ft_id + s]);
 			d_in[ft_id] = (d_in[ft_id] > d_in[ft_id + s]) ? d_in[ft_id] : d_in[ft_id + s];
 
 			if (size % 2 == 1 && ft_id + s + s == size - 1)
@@ -42,7 +38,10 @@ __global__ void max(float *d_in, float *d_out)
 		size /= 2;
 	}
 	if (tid == 0)
+	{
 		d_out[blockIdx.x] = d_in[ft_id];
+		printf("Here d_out[%d] = %f\n", blockIdx.x, d_out[blockIdx.x]);
+	}
 }
 
 float			*init_values(size_t size)
@@ -96,7 +95,7 @@ int				main(void)
 	cudaFree(d_values_);
 
 	for (int i = 0; i < GRID_SIZE; i++)
-		printf("h_max = %f\n", h_max[i]);
+		printf("h_max[%d] = %f\n", i, h_max[i]);
 
 	return(0);
 }
