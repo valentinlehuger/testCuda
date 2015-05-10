@@ -99,9 +99,6 @@ int				main(void)
 	// memcopy values
 	checkCudaErrors(cudaMemcpy(d_values, h_values, sizeof(float) * NB, cudaMemcpyHostToDevice));
 
-	// // memset max
-	// checkCudaErrors(cudaMemset(d_max, 0, sizeof(float) * GRID_SIZE));
-
 	// kernel
 	max<<<grid_size, BLOCK_SIZE>>>(d_values, d_max);
 	cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
