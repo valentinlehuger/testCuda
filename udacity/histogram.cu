@@ -58,7 +58,7 @@ __global__ void	histogram(int *histogram, float *values, int min, int max, int b
 			// if (id + i < NB)
 			// 	printf("values[%d] = %f <= %f\n", id + i, values[id + i], (float)min + (float)(j + 1) * bin_size);
 
-			if (id < NB && values[id + i] <= ((float)min + (float)(j + 1) * bin_size))
+			if (id + i < NB && values[id + i] <= ((float)min + (float)(j + 1) * bin_size))
 			{
 				local_hist[j] += 1;
 				// printf("Thread %d : values[%d] = %f -> local_hist[%d] = %d\n", thread_id, id + i, values[id + i], j, local_hist[j]);
@@ -70,20 +70,48 @@ __global__ void	histogram(int *histogram, float *values, int min, int max, int b
 	// Store local bins into shared bins
 	for (int i = 0; i < bins; i++)
 	{
-		s_bins[nb_thread + bins + i] = local_hist[i];
-		if (local_hist[i] > 0)
-			printf("s_bins[%d] = %d\n", thread_id * bins + i, local_hist[i]);
+		s_bins[nb_thread * i + thread_id] = local_hist[i];
+		// printf("Thread %d : s_bins[%d] = local_hist[%d] = %d\n", thread_id, thread_id * i + thread_id, i, local_hist[i]);
 	}
 
 	__syncthreads();
 
+	// if (id == 0)
+	// {
+	// 	for (int i = 0; i < nb_thread * 3; i++)
+	// 	{
+	// 		printf("s_bins[%d] = %d\n", i, s_bins[i]);
+	// 	}
+	// }
+
 	// Reduce each shared bin
-	//
-	//
+	// int size = (blockIdx.x == gridDim.x - 1) ? (NB % blockDim.x) : blockDim.x;
+
+	int size = nb_thread;
+
+	for (size_t s = nb_thread / 2; s > 0; s >>= 1)
+	{
+		if (thread_id + s < nb_thread && thread_id < s)
+		{
+			for (size_t j = 0; j < bins; j++)
+			{
+				s_bins[j * nb_thread + thread_id] = s_bins[j * nb_thread + thread_id] + s_bins[j * nb_thread + thread_id + s];
+
+				if (size % 2 == 1 && thread_id + s + s == size - 1)
+					s_bins[j * nb_thread + thread_id] = s_bins[j * nb_thread + thread_id] + s_bins[j * nb_thread + thread_id + s + s];
+			}
+		}
+		__syncthreads();
+		size = s;
+	}
 
 	// Store the result into histogram
-	//
-	//
+	if (thread_id == 0)
+	{
+		histogram[0] = s_bins[0];
+		histogram[1] = s_bins[nb_thread];
+		histogram[2] = s_bins[nb_thread * 2];
+	}
 }
 
 
@@ -105,6 +133,7 @@ int				main(void)
 	int			grid_dim = nb_thread / THREADS + 1;
 
 	printf("nb_thread = %d\n", nb_thread);
+	printf("\n\n");
 
 	// cudaMalloc
 	checkCudaErrors(cudaMalloc(d_values_, sizeof(float) * NB));
@@ -125,6 +154,11 @@ int				main(void)
 	// cudaMemcpy DeviceToHost
 	checkCudaErrors(cudaMemcpy(h_histogram, d_histogram, sizeof(int) * BINS, cudaMemcpyDeviceToHost));
 
+	printf("\n\n");
+	for (int i = 0; i < BINS; i++)
+	{
+		printf("Histogram[%d] = %d\n", i, h_histogram[i]);
+	}
 
 	// cudaFree
 	cudaFree(d_values_);
