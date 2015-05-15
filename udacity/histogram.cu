@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <cuda.h>
 
-#define THREADS 19
+#define THREADS 1024
 
 #define BINS 3
-#define NB 100
-#define ITEMS_PER_THREAD 10
+#define NB 9000000
+#define ITEMS_PER_THREAD 100
 
 #define checkCudaErrors(val) check( (val), #val, __FILE__, __LINE__)
 
@@ -61,7 +61,7 @@ __global__ void	histogram(int *histogram, float *values, int min, int max, int b
 			if (id + i < NB && values[id + i] <= ((float)min + (float)(j + 1) * bin_size))
 			{
 				local_hist[j] += 1;
-				// printf("Thread %d : values[%d] = %f -> local_hist[%d] = %d\n", thread_id, id + i, values[id + i], j, local_hist[j]);
+				// printf("BlockIdx : %d - Thread %d : values[%d] = %f -> local_hist[%d] = %d\n", blockIdx.x, thread_id, id + i, values[id + i], j, local_hist[j]);
 				break ;
 			}
 		}
@@ -70,13 +70,13 @@ __global__ void	histogram(int *histogram, float *values, int min, int max, int b
 	// Store local bins into shared bins
 	for (int i = 0; i < bins; i++)
 	{
-		s_bins[nb_thread * i + thread_id] = local_hist[i];
-		// printf("Thread %d : s_bins[%d] = local_hist[%d] = %d\n", thread_id, thread_id * i + thread_id, i, local_hist[i]);
+		s_bins[THREADS * i + thread_id] = local_hist[i];
+		printf("Block %d - Thread %d : s_bins[%d] = local_hist[%d] = %d\n", blockIdx.x, thread_id, THREADS * i + thread_id, i, local_hist[i]);
 	}
 
 	__syncthreads();
 
-	// if (id == 0)
+	// if (thread_id == 0)
 	// {
 	// 	for (int i = 0; i < nb_thread * 3; i++)
 	// 	{
@@ -87,18 +87,18 @@ __global__ void	histogram(int *histogram, float *values, int min, int max, int b
 	// Reduce each shared bin
 	// int size = (blockIdx.x == gridDim.x - 1) ? (NB % blockDim.x) : blockDim.x;
 
-	int size = nb_thread;
+	int size = THREADS;
 
-	for (size_t s = nb_thread / 2; s > 0; s >>= 1)
+	for (size_t s = THREADS / 2; s > 0; s >>= 1)
 	{
-		if (thread_id + s < nb_thread && thread_id < s)
+		if (thread_id + s < THREADS && thread_id < s)
 		{
 			for (size_t j = 0; j < bins; j++)
 			{
-				s_bins[j * nb_thread + thread_id] = s_bins[j * nb_thread + thread_id] + s_bins[j * nb_thread + thread_id + s];
+				s_bins[j * THREADS + thread_id] = s_bins[j * THREADS + thread_id] + s_bins[j * THREADS + thread_id + s];
 
 				if (size % 2 == 1 && thread_id + s + s == size - 1)
-					s_bins[j * nb_thread + thread_id] = s_bins[j * nb_thread + thread_id] + s_bins[j * nb_thread + thread_id + s + s];
+					s_bins[j * THREADS + thread_id] = s_bins[j * THREADS + thread_id] + s_bins[j * THREADS + thread_id + s + s];
 			}
 		}
 		__syncthreads();
@@ -108,9 +108,12 @@ __global__ void	histogram(int *histogram, float *values, int min, int max, int b
 	// Store the result into histogram
 	if (thread_id == 0)
 	{
-		histogram[0] = s_bins[0];
-		histogram[1] = s_bins[nb_thread];
-		histogram[2] = s_bins[nb_thread * 2];
+		histogram[0 + blockIdx.x * bins] = s_bins[0];
+		histogram[1 + blockIdx.x * bins] = s_bins[THREADS];
+		histogram[2 + blockIdx.x * bins] = s_bins[THREADS * 2];
+		printf("histogram[%d] = %d\n", 0 + blockIdx.x * bins, s_bins[0]);
+		printf("histogram[%d] = %d\n", 1 + blockIdx.x * bins, s_bins[THREADS]);
+		printf("histogram[%d] = %d\n", 2 + blockIdx.x * bins, s_bins[THREADS * 2]);
 	}
 }
 
@@ -132,12 +135,14 @@ int				main(void)
 	int			nb_thread = NB / ITEMS_PER_THREAD + 1;
 	int			grid_dim = nb_thread / THREADS + 1;
 
+	printf("NB = %d\n", NB);
+	printf("ITEMS_PER_THREAD = %d\n", ITEMS_PER_THREAD);
 	printf("nb_thread = %d\n", nb_thread);
-	printf("\n\n");
+	printf("grid dim = %d\n", grid_dim);
 
 	// cudaMalloc
 	checkCudaErrors(cudaMalloc(d_values_, sizeof(float) * NB));
-	checkCudaErrors(cudaMalloc(d_histogram_, sizeof(int) * BINS));
+	checkCudaErrors(cudaMalloc(d_histogram_, sizeof(int) * BINS * grid_dim));
 
 	// cudaMemcpy HostToDevice
 	checkCudaErrors(cudaMemcpy(d_values, h_values, sizeof(float) * NB, cudaMemcpyHostToDevice));
@@ -145,17 +150,18 @@ int				main(void)
 	// cudaMemset
 	checkCudaErrors(cudaMemset(d_histogram, 0, sizeof(int) * BINS));
 
-
+	printf("size of shared mem = %d\n", THREADS * BINS);
+	printf("\n\n");
 	// // kernel HISTOGRAM
 	histogram<<<grid_dim, THREADS, THREADS * BINS * sizeof(int) >>>(d_histogram, d_values, min, max, BINS, nb_thread);
 	cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
 
 
 	// cudaMemcpy DeviceToHost
-	checkCudaErrors(cudaMemcpy(h_histogram, d_histogram, sizeof(int) * BINS, cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(h_histogram, d_histogram, sizeof(int) * BINS * grid_dim, cudaMemcpyDeviceToHost));
 
 	printf("\n\n");
-	for (int i = 0; i < BINS; i++)
+	for (int i = 0; i < BINS * grid_dim; i++)
 	{
 		printf("Histogram[%d] = %d\n", i, h_histogram[i]);
 	}
