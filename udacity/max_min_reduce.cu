@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <cuda.h>
 
-#define NB 10
 #define BLOCK_SIZE 1024
 
 
@@ -29,93 +28,86 @@ void check(T err, const char* const func, const char* const file, const int line
         } \
     } while (0)
 
-__global__ void max(float *d_in, float *d_out)
+__global__ void max_min_cuda(float *d_in1, float *d_in2, float *d_max, float *d_min, size_t nb)
 {
 	int ft_id = threadIdx.x + blockDim.x * blockIdx.x;
 	int tid = threadIdx.x;
-	int size = (blockIdx.x == gridDim.x - 1) ? (NB % blockDim.x) : blockDim.x;
-
+	int size = (blockIdx.x == gridDim.x - 1) ? (nb % blockDim.x) : blockDim.x;
+ 
 	for (size_t s = blockDim.x / 2; s > 0; s >>= 1)
 	{
-		if (ft_id + s < NB && tid < s)
+		if (ft_id + s < nb && tid < s)
 		{
-			// printf("Compare d_in[%d] = %f with d_in[%d] = %f\n", (int)ft_id, d_in[ft_id], (int)(ft_id + s), d_in[ft_id + s]);
-			d_in[ft_id] = (d_in[ft_id] > d_in[ft_id + s]) ? d_in[ft_id] : d_in[ft_id + s];
-
+			d_in1[ft_id] = (d_in1[ft_id] > d_in1[ft_id + s]) ? d_in1[ft_id] : d_in1[ft_id + s];
 			if (size % 2 == 1 && ft_id + s + s == size - 1)
-				d_in[ft_id] = (d_in[ft_id] > d_in[ft_id + s + s]) ? d_in[ft_id] : d_in[ft_id + s + s];
+				d_in1[ft_id] = (d_in1[ft_id] > d_in1[ft_id + s + s]) ? d_in1[ft_id] : d_in1[ft_id + s + s];
+			d_in2[ft_id] = (d_in2[ft_id] < d_in2[ft_id + s]) ? d_in2[ft_id] : d_in2[ft_id + s];
+			if (size % 2 == 1 && ft_id + s + s == size - 1)
+				d_in2[ft_id] = (d_in2[ft_id] < d_in2[ft_id + s + s]) ? d_in2[ft_id] : d_in2[ft_id + s + s];
 		}
 		__syncthreads();
 		size /= 2;
 	}
 	if (tid == 0)
 	{
-		d_out[blockIdx.x] = d_in[ft_id];
+		d_max[blockIdx.x] = d_in1[ft_id];
+		d_min[blockIdx.x] = d_in2[ft_id];
 	}
 	// __syncthreads();
 	// for (int i = 0; i < GRID_SIZE; i++)
 	// 	printf("d_out[%d] = %f\n", i, d_out[i]);
 }
 
-float			*init_values(size_t size)
+void				max_min(float *h_values, size_t size, float &h_min, float &h_max)
 {
-	float		*values;
-
-	if ((values = (float *)malloc(sizeof(float) * size)) != NULL)
-	{
-		for (size_t i = 0; i < size; i++)
-			values[i] = float(i + 2);
-		values[size / 2] = 100.f;
-		return (values);
-	}
-	return (NULL);
-}
-
-int				main(void)
-{
-	size_t 		grid_size = NB / BLOCK_SIZE + 1;
-
-	float		*h_values;
+	size_t 		grid_size = size / BLOCK_SIZE + 1;
 
 	float		*d_values;
 	float		**d_values_ = &d_values;
+	float		*d_values2;
+	float		**d_values2_ = &d_values2;
 
-	float		*h_max = (float *)malloc(sizeof(float) * 1);
+	float		*maxs = (float *)malloc(sizeof(float) * grid_size);
 	float		*d_max;
 	float		**d_max_ = &d_max;
 
-	h_values = init_values(NB);
+	float		*mins = (float *)malloc(sizeof(float) * grid_size);
+	float		*d_min;
+	float		**d_min_ = &d_min;
 
-	printf ("Initial values :\n");
-	for (int i = 0; i < NB; i++)
-		printf("%f\n", h_values[i]);
-	printf("\n");
-	
 
 	// malloc values and max
-	checkCudaErrors(cudaMalloc(d_values_, sizeof(float) * NB));
-	checkCudaErrors(cudaMalloc(d_max_, sizeof(float) * 1));
+	checkCudaErrors(cudaMalloc(d_values_, sizeof(float) * size));
+	checkCudaErrors(cudaMalloc(d_values2_, sizeof(float) * size));
+	checkCudaErrors(cudaMalloc(d_max_, sizeof(float) * grid_size));
+	checkCudaErrors(cudaMalloc(d_min_, sizeof(float) * grid_size));
 
 	// memcopy values
-	checkCudaErrors(cudaMemcpy(d_values, h_values, sizeof(float) * NB, cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_values, h_values, sizeof(float) * size, cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_values2, h_values, sizeof(float) * size, cudaMemcpyHostToDevice));
 
 	// kernel
-	max<<<grid_size, BLOCK_SIZE>>>(d_values, d_max);
+	max_min_cuda<<<grid_size, BLOCK_SIZE>>>(d_values, d_values2, d_max, d_min, size);
 	cudaDeviceSynchronize(); checkCudaErrors(cudaGetLastError());
 	
 	// printf("GRID SIZE %d\n", GRID_SIZE);
 
-	// memcpy max result
-	checkCudaErrors(cudaMemcpy(h_max, d_max, sizeof(float) * 1, cudaMemcpyDeviceToHost));
+	// memcpy results
+	checkCudaErrors(cudaMemcpy(maxs, d_max, sizeof(float) * grid_size, cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(mins, d_min, sizeof(float) * grid_size, cudaMemcpyDeviceToHost));
+	h_min = mins[0];
+	h_max = maxs[0];
+	for (int i = 0; i < grid_size; i++) {
+	  if (h_max < maxs[i])
+	    h_max = maxs[i];
+	  if (h_min > mins[i])
+	    h_min = mins[i];
+	}
 
-
-
-	for (int i = 0; i < grid_size; i++)
-		printf("h_max[%d] = %f\n", i, h_max[i]);
-
-	// free the two
+	// free the three
 	cudaFree(d_max_);
+	cudaFree(d_min_);
 	cudaFree(d_values_);
+	cudaFree(d_values2_);
 
-	return(0);
 }

@@ -5,7 +5,7 @@
 #define THREADS 1024
 
 #define BINS 3
-#define NB 9000000
+#define NB 9000
 #define ITEMS_PER_THREAD 100
 
 #define checkCudaErrors(val) check( (val), #val, __FILE__, __LINE__)
