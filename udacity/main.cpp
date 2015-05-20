@@ -2,6 +2,9 @@
 #include <stdio.h>
 
 void	max_min(float *h_values, size_t size, float &h_min, float &h_max); 
+void	histogram(float *h_values, size_t size, float min, float max, int *h_histogram, size_t bins);
+void	blelloch_scan_reduce(int *h_values, size_t bins);
+
 
 float			*init_values(size_t size)
 {
@@ -23,7 +26,7 @@ int			main(void)
   size_t		size = 90;
   int			bins = 8;
   float			*values = init_values(size);
-  int			*hist;
+  int			*hist = (int *)malloc(sizeof(int) * bins);
   float			max = 0;
   float			min = 0;
 
@@ -37,5 +40,17 @@ int			main(void)
   printf("max = %f\n", max);
   printf("min = %f\n", min);
 
-  return (0);
+  histogram(values, size, min, max, hist, bins);
+
+  for (size_t i = 0; i < bins; i++)
+     printf("%d|", hist[i]);
+  printf("\n");
+ 
+  blelloch_scan_reduce(hist, bins);
+
+  for (size_t i = 0; i < bins; i++)
+    printf("%d|", hist[i]);
+  printf("\n");
+
+ return (0);
 }

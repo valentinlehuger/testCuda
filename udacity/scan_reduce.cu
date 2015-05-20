@@ -13,31 +13,13 @@ void check(T err, const char* const func, const char* const file, const int line
   }
 }
 
-
-#define NB 8
-
-
-int			*init_values(size_t size)
-{
-	int		*values;
-
-	if ((values = (int *)malloc(sizeof(int) * size)) != NULL)
-	{
-		for (size_t i = 0; i < size; i++)
-			values[i] = i + 1;
-		// values[size / 2] = 8.f;
-		return (values);
-	}
-	return (NULL);
-}
-
-__global__ void	b_scan_reduce_cuda(int *values, int *cumulative)
+__global__ void	b_scan_reduce_cuda(int *values, int *cumulative, size_t bins)
 {
 
 	int		id = blockDim.x * blockIdx.x + threadIdx.x;
 	int		tid = threadIdx.x;
 	
-	int		nb_here = (NB - (blockDim.x * blockIdx.x) < blockDim.x) ? NB - (blockDim.x * blockIdx.x) : blockDim.x;
+	int		nb_here = (bins - (blockDim.x * blockIdx.x) < blockDim.x) ? bins - (blockDim.x * blockIdx.x) : blockDim.x;
 
 	if (tid == 0)
 	  printf("Block %d nb_here = %d\n", blockIdx.x, nb_here);
@@ -90,7 +72,7 @@ __global__ void	b_scan_reduce_cuda(int *values, int *cumulative)
         cumulative[id] = values[id];
 }
 
-void		blelloch_scan_reduce(int *h_values, int *h_cumulative)
+void		blelloch_scan_reduce(int *h_values, size_t bins)
 {
 	int		*d_values;
 	int		**d_values_ = &d_values;
@@ -99,38 +81,21 @@ void		blelloch_scan_reduce(int *h_values, int *h_cumulative)
 	int		**d_cumulative_ = &d_cumulative;
 
 	// mallocs
-	checkCudaErrors(cudaMalloc(d_values_, sizeof(int) * NB));
-	checkCudaErrors(cudaMalloc(d_cumulative_, sizeof(int) * NB));
+	checkCudaErrors(cudaMalloc(d_values_, sizeof(int) * bins));
+	checkCudaErrors(cudaMalloc(d_cumulative_, sizeof(int) * bins));
 
 	// memcpy & memset
-	checkCudaErrors(cudaMemcpy(d_values, h_values, sizeof(int) * NB, cudaMemcpyHostToDevice));
-	checkCudaErrors(cudaMemcpy(d_cumulative, h_values, sizeof(int) * NB, cudaMemcpyHostToDevice));
-	// checkCudaErrors(cudaMemset(d_cumulative, 0, sizeof(int) * NB));
+	checkCudaErrors(cudaMemcpy(d_values, h_values, sizeof(int) * bins, cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(d_cumulative, h_values, sizeof(int) * bins, cudaMemcpyHostToDevice));
+	// checkCudaErrors(cudaMemset(d_cumulative, 0, sizeof(int) * bins));
 
-	b_scan_reduce_cuda<<<1, NB>>>(d_values, d_cumulative);
-
+	b_scan_reduce_cuda<<<1, bins>>>(d_values, d_cumulative, bins);
+	cudaDeviceSynchronize();// checkCudaErrors(cudaGetLastError());
 	// memcpy
-	checkCudaErrors(cudaMemcpy(h_cumulative, d_cumulative, sizeof(int) * NB, cudaMemcpyDeviceToHost));
-	// checkCudaErrors(cudaMemcpy(h_values, d_values, sizeof(int) * NB, cudaMemcpyDeviceToHost));
+	checkCudaErrors(cudaMemcpy(h_values, d_cumulative, sizeof(int) * bins, cudaMemcpyDeviceToHost));
+	// checkCudaErrors(cudaMemcpy(h_values, d_values, sizeof(int) * bins, cudaMemcpyDeviceToHost));
 
 	// free
 	cudaFree(d_values_);
 	cudaFree(d_cumulative_);
-}
-
-int			main(void)
-{
-	int		*values;
-	int		*cumulative;
-
-	values = init_values(NB);
-	cumulative = (int *)malloc(sizeof(int) * NB);
-	blelloch_scan_reduce(values, cumulative);
-
-	for (size_t i = 0; i < NB; i++)
-	{
-		printf("%d\t%d\n", values[i], cumulative[i]);
-	}
-
-	return (0);
 }
